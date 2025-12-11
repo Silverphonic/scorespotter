@@ -835,6 +835,71 @@
             border-color: var(--accent-blue);
         }
 
+        .fps-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .drop-frame-container {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .drop-frame-container.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .drop-frame-checkbox {
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+            accent-color: var(--accent-blue);
+        }
+
+        .drop-frame-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .detection-progress {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 16px;
+            background: var(--bg-input);
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .detection-spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .drop-frame-note {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-style: italic;
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: var(--bg-input);
+            border-radius: 6px;
+            border-left: 3px solid var(--accent-blue);
+        }
+
         .timecode-input-group {
             display: flex;
             gap: 2px;
@@ -1173,27 +1238,35 @@
         <div class="timer-settings-grid">
             <div class="timer-grid-cell">
                 <span class="timer-setting-label">FPS</span>
-                <select class="timer-select" id="fpsSelect">
-                    <optgroup label="Film">
-                        <option value="23.976">23.976 fps</option>
-                        <option value="24" selected>24 fps</option>
-                    </optgroup>
-                    <optgroup label="PAL/European">
-                        <option value="25">25 fps</option>
-                    </optgroup>
-                    <optgroup label="NTSC/North American">
-                        <option value="29.97ndf">29.97 fps NDF</option>
-                        <option value="29.97df">29.97 fps DF</option>
-                        <option value="30">30 fps</option>
-                    </optgroup>
-                    <optgroup label="High Frame Rate">
-                        <option value="48">48 fps</option>
-                        <option value="50">50 fps</option>
-                        <option value="59.94ndf">59.94 fps NDF</option>
-                        <option value="59.94df">59.94 fps DF</option>
-                        <option value="60">60 fps</option>
-                    </optgroup>
-                </select>
+                <div class="fps-row">
+                    <select class="timer-select" id="fpsSelect">
+                        <optgroup label="Film">
+                            <option value="23.976">23.976</option>
+                            <option value="24" selected>24</option>
+                            <option value="47.952">47.952</option>
+                            <option value="48">48</option>
+                        </optgroup>
+                        <optgroup label="PAL / European">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                        </optgroup>
+                        <optgroup label="NTSC / North American">
+                            <option value="29.97">29.97</option>
+                            <option value="30">30</option>
+                            <option value="59.94">59.94</option>
+                            <option value="60">60</option>
+                        </optgroup>
+                        <optgroup label="High Frame Rate">
+                            <option value="90">90</option>
+                            <option value="120">120</option>
+                        </optgroup>
+                    </select>
+                    <div class="drop-frame-container" id="dropFrameContainer">
+                        <input type="checkbox" class="drop-frame-checkbox" id="dropFrameCheckbox">
+                        <label class="drop-frame-label" for="dropFrameCheckbox">DF</label>
+                    </div>
+                </div>
             </div>
             <div class="timer-grid-cell">
                 <span class="timer-setting-label">Sync Timecode</span>
@@ -1560,6 +1633,37 @@
         </div>
     </div>
 
+    <!-- Frame Rate Detection Modal -->
+    <div class="modal-overlay" id="fpsDetectModal">
+        <div class="modal">
+            <div class="modal-title">Video Loaded</div>
+            <div class="modal-body" id="fpsDetectBody">
+                Would you like ScoreSpotter to detect the frame rate?
+            </div>
+            <div class="modal-buttons" id="fpsDetectButtons">
+                <button class="btn" id="fpsDetectNoBtn">No, I'll set it manually</button>
+                <button class="btn btn-primary" id="fpsDetectYesBtn">Yes, detect frame rate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Frame Rate Suggestion Modal -->
+    <div class="modal-overlay" id="fpsSuggestModal">
+        <div class="modal">
+            <div class="modal-title">Suggested Frame Rate</div>
+            <div class="modal-body">
+                <div id="fpsSuggestText"></div>
+                <div class="drop-frame-note" id="dropFrameNote" style="display: none;">
+                    <strong>Note:</strong> Drop frame cannot be auto-detected. If your source uses drop frame timecode (common for broadcast at 29.97/59.94), check the DF box manually after setting the frame rate.
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="fpsSuggestNoBtn">No, keep current</button>
+                <button class="btn btn-primary" id="fpsSuggestYesBtn">Yes, use this rate</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Context Menu -->
     <div class="context-menu" id="contextMenu">
         <div class="context-menu-item" data-action="delete-renumber">Delete and Renumber</div>
@@ -1575,8 +1679,14 @@
     <!-- Toast Container -->
     <div class="toast-container" id="toastContainer"></div>
 
-    <script>
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script>
         // ==================== STATE ====================
+        // Standard frame rates supported
+        const STANDARD_FRAME_RATES = [23.976, 24, 25, 29.97, 30, 47.952, 48, 50, 59.94, 60, 90, 100, 120];
+        
+        // Frame rates that support drop frame timecode
+        const DROP_FRAME_RATES = [29.97, 30, 59.94, 60];
+        
         const state = {
             entries: [],
             themes: {},
@@ -1605,29 +1715,40 @@
             contextMenuEntryIndex: null,
             actionHistory: [],
             isEditingNotes: false,
-            isEditingTimecode: false
+            isEditingTimecode: false,
+            // Frame rate detection state
+            pendingVideoFile: null,
+            detectedFps: null
         };
 
         // ==================== FRAME RATE HELPERS ====================
         function getFpsValue(fpsString) {
-            const map = {
-                '23.976': 23.976,
-                '24': 24,
-                '25': 25,
-                '29.97ndf': 29.97,
-                '29.97df': 29.97,
-                '30': 30,
-                '48': 48,
-                '50': 50,
-                '59.94ndf': 59.94,
-                '59.94df': 59.94,
-                '60': 60
-            };
-            return map[fpsString] || 24;
+            // Now we just parse the numeric value directly
+            return parseFloat(fpsString) || 24;
         }
 
         function isDropFrame(fpsString) {
-            return fpsString.includes('df') && !fpsString.includes('ndf');
+            // Drop frame is now controlled by the checkbox, not the string
+            return state.timer.isDropFrame;
+        }
+        
+        function supportsDropFrame(fps) {
+            const fpsNum = parseFloat(fps);
+            return DROP_FRAME_RATES.some(df => Math.abs(df - fpsNum) < 0.01);
+        }
+        
+        function updateDropFrameVisibility() {
+            const fpsValue = document.getElementById('fpsSelect').value;
+            const container = document.getElementById('dropFrameContainer');
+            const checkbox = document.getElementById('dropFrameCheckbox');
+            
+            if (supportsDropFrame(fpsValue)) {
+                container.classList.remove('disabled');
+            } else {
+                container.classList.add('disabled');
+                checkbox.checked = false;
+                state.timer.isDropFrame = false;
+            }
         }
 
         function getMaxFrames() {
@@ -1859,6 +1980,178 @@
             showToast(`Jumped to ${framesToTimecode(state.timer.currentFrames).display}`, 'info');
         }
 
+        // ==================== FRAME RATE DETECTION ====================
+        function findNearestStandardFps(detectedFps) {
+            let nearest = STANDARD_FRAME_RATES[0];
+            let minDiff = Math.abs(detectedFps - nearest);
+            
+            for (const fps of STANDARD_FRAME_RATES) {
+                const diff = Math.abs(detectedFps - fps);
+                if (diff < minDiff) {
+                    minDiff = diff;
+                    nearest = fps;
+                }
+            }
+            return nearest;
+        }
+
+        function detectFrameRateBySampling(video) {
+            return new Promise((resolve) => {
+                // Check if requestVideoFrameCallback is supported
+                if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) {
+                    console.log('requestVideoFrameCallback not supported');
+                    resolve(null);
+                    return;
+                }
+                
+                let frameCount = 0;
+                let startTime = null;
+                const sampleDuration = 3000; // 3 seconds for faster detection
+                const originalTime = video.currentTime;
+                const wasPlaying = !video.paused;
+                
+                showDetectionProgress(true);
+                
+                function countFrame(now, metadata) {
+                    if (startTime === null) {
+                        startTime = now;
+                    }
+                    
+                    frameCount++;
+                    
+                    const elapsed = now - startTime;
+                    if (elapsed >= sampleDuration) {
+                        video.pause();
+                        video.currentTime = originalTime;
+                        showDetectionProgress(false);
+                        
+                        // Calculate FPS from frame count and elapsed time
+                        const avgFps = frameCount / (elapsed / 1000);
+                        console.log(`Detected ${frameCount} frames in ${elapsed}ms = ${avgFps.toFixed(3)} fps`);
+                        resolve(findNearestStandardFps(avgFps));
+                        return;
+                    }
+                    
+                    video.requestVideoFrameCallback(countFrame);
+                }
+                
+                // Start from beginning for consistent measurement
+                video.currentTime = 0;
+                video.muted = true; // Mute during detection
+                
+                // Wait for seek to complete, then start counting
+                video.onseeked = () => {
+                    video.onseeked = null;
+                    video.play().then(() => {
+                        video.requestVideoFrameCallback(countFrame);
+                    }).catch(err => {
+                        console.error('Could not play video for detection:', err);
+                        showDetectionProgress(false);
+                        resolve(null);
+                    });
+                };
+            });
+        }
+
+        function showDetectionProgress(show) {
+            const body = document.getElementById('fpsDetectBody');
+            const buttons = document.getElementById('fpsDetectButtons');
+            
+            if (show) {
+                body.innerHTML = `
+                    <div class="detection-progress">
+                        <div class="detection-spinner"></div>
+                        <span>Detecting frame rate... (sampling video)</span>
+                    </div>
+                `;
+                buttons.style.display = 'none';
+            } else {
+                body.innerHTML = 'Would you like ScoreSpotter to detect the frame rate?';
+                buttons.style.display = 'flex';
+            }
+        }
+
+        async function performFrameRateDetection() {
+            const video = document.getElementById('videoPlayer');
+            const detectedFps = await detectFrameRateBySampling(video);
+            
+            hideFpsDetectModal();
+            
+            if (detectedFps) {
+                state.detectedFps = detectedFps;
+                showFpsSuggestionModal(detectedFps);
+            } else {
+                showToast('Could not detect frame rate. Please set manually.', 'info');
+                finalizeVideoLoad();
+            }
+        }
+
+        function showFpsDetectModal() {
+            const modal = document.getElementById('fpsDetectModal');
+            const body = document.getElementById('fpsDetectBody');
+            const buttons = document.getElementById('fpsDetectButtons');
+            
+            body.innerHTML = 'Would you like ScoreSpotter to detect the frame rate?';
+            buttons.style.display = 'flex';
+            modal.classList.add('show');
+        }
+
+        function hideFpsDetectModal() {
+            document.getElementById('fpsDetectModal').classList.remove('show');
+        }
+
+        function showFpsSuggestionModal(fps) {
+            const modal = document.getElementById('fpsSuggestModal');
+            const text = document.getElementById('fpsSuggestText');
+            const note = document.getElementById('dropFrameNote');
+            const yesBtn = document.getElementById('fpsSuggestYesBtn');
+            
+            text.innerHTML = `Detected frame rate: <strong style="font-size: 1.2em; color: var(--accent-blue);">${fps} fps</strong>`;
+            yesBtn.textContent = `Yes, set to ${fps} fps`;
+            
+            // Show drop frame note for applicable rates
+            if (supportsDropFrame(fps)) {
+                note.style.display = 'block';
+            } else {
+                note.style.display = 'none';
+            }
+            
+            modal.classList.add('show');
+        }
+
+        function hideFpsSuggestModal() {
+            document.getElementById('fpsSuggestModal').classList.remove('show');
+        }
+
+        function applyDetectedFps() {
+            if (state.detectedFps) {
+                document.getElementById('fpsSelect').value = state.detectedFps.toString();
+                state.timer.fps = state.detectedFps;
+                state.timer.isDropFrame = false;
+                document.getElementById('dropFrameCheckbox').checked = false;
+                updateDropFrameVisibility();
+                updateFpsDisplay();
+                updateTimerDisplay();
+                autoSave();
+                showToast(`Frame rate set to ${state.detectedFps} fps`, 'info');
+            }
+            hideFpsSuggestModal();
+            finalizeVideoLoad();
+        }
+
+        function finalizeVideoLoad() {
+            const video = document.getElementById('videoPlayer');
+            video.muted = false;
+            video.currentTime = 0;
+            state.pendingVideoFile = null;
+            state.detectedFps = null;
+            
+            // Reset timer to offset and sync video
+            resetTimer();
+            
+            showToast(`Video loaded: ${state.video.filename}`, 'info');
+        }
+
         // ==================== VIDEO FUNCTIONS ====================
         function loadVideo(file) {
             const video = document.getElementById('videoPlayer');
@@ -1872,6 +2165,7 @@
                 state.video.loaded = true;
                 state.video.duration = video.duration;
                 state.video.filename = file.name;
+                state.pendingVideoFile = file;
                 
                 placeholder.style.display = 'none';
                 video.style.display = 'block';
@@ -1880,10 +2174,8 @@
                 document.getElementById('videoFilename').textContent = file.name;
                 document.getElementById('videoScrubber').max = Math.floor(video.duration * 1000);
                 
-                // Reset timer to offset and sync video
-                resetTimer();
-                
-                showToast(`Video loaded: ${file.name}`, 'info');
+                // Show frame rate detection modal instead of immediately finalizing
+                showFpsDetectModal();
             };
             
             video.onerror = () => {
@@ -3164,6 +3456,7 @@
                 currentReel: state.currentReel,
                 currentCueInReel: state.currentCueInReel,
                 fps: document.getElementById('fpsSelect').value,
+                isDropFrame: state.timer.isDropFrame,
                 offsetFrames: state.timer.offsetFrames
             };
             
@@ -3201,6 +3494,13 @@
                     document.getElementById('fpsSelect').value = data.fps;
                     updateFps();
                 }
+                
+                // Load drop frame setting
+                if (data.isDropFrame !== undefined) {
+                    state.timer.isDropFrame = data.isDropFrame;
+                    document.getElementById('dropFrameCheckbox').checked = data.isDropFrame;
+                }
+                updateDropFrameVisibility();
                 
                 // Load offset - support both new (offsetFrames) and legacy (offset object) formats
                 if (data.offsetFrames !== undefined) {
@@ -3724,18 +4024,8 @@
         }
         
         function getFpsString(fps, isDF) {
-            if (fps === 23.976) return '23.976';
-            if (fps === 24) return '24';
-            if (fps === 25) return '25';
-            if (fps === 29.97 && !isDF) return '29.97ndf';
-            if (fps === 29.97 && isDF) return '29.97df';
-            if (fps === 30) return '30';
-            if (fps === 48) return '48';
-            if (fps === 50) return '50';
-            if (fps === 59.94 && !isDF) return '59.94ndf';
-            if (fps === 59.94 && isDF) return '59.94df';
-            if (fps === 60) return '60';
-            return '24';
+            // Now we just return the fps as a string since DF is controlled by checkbox
+            return fps.toString();
         }
         
         function applyFpsChange(mode) {
@@ -3756,7 +4046,13 @@
             const oldFps = state.timer.fps;
             const newFps = getFpsValue(fpsValue);
             const wasDropFrame = state.timer.isDropFrame;
-            const isNowDropFrame = isDropFrame(fpsValue);
+            // Drop frame is now controlled by checkbox, not select value
+            // But when changing FPS, if new rate doesn't support DF, turn it off
+            let isNowDropFrame = state.timer.isDropFrame;
+            if (!supportsDropFrame(newFps)) {
+                isNowDropFrame = false;
+                document.getElementById('dropFrameCheckbox').checked = false;
+            }
             
             if (mode === 'preserve-time' && oldFps !== newFps) {
                 // Preserve time position: keep HH:MM:SS, adjust frames proportionally
@@ -3812,6 +4108,9 @@
                 state.timer.isDropFrame = isNowDropFrame;
             }
             
+            // Update drop frame checkbox visibility
+            updateDropFrameVisibility();
+            
             const sep = state.timer.isDropFrame ? ';' : ':';
             document.getElementById('syncFrameSep').textContent = sep;
             document.getElementById('jumpFrameSep').textContent = sep;
@@ -3825,11 +4124,21 @@
         
         function updateFpsDisplay() {
             const fpsValue = document.getElementById('fpsSelect').value;
-            document.getElementById('fpsDisplay').textContent = `FPS: ${fpsValue.replace('ndf', ' NDF').replace('df', ' DF')}`;
+            const isDF = state.timer.isDropFrame;
+            const dfText = isDF ? ' DF' : '';
+            document.getElementById('fpsDisplay').textContent = `FPS: ${fpsValue}${dfText}`;
             
-            const sep = state.timer.isDropFrame ? ';' : ':';
+            const sep = isDF ? ';' : ':';
             document.getElementById('syncFrameSep').textContent = sep;
             document.getElementById('jumpFrameSep').textContent = sep;
+        }
+        
+        function onDropFrameChange() {
+            state.timer.isDropFrame = document.getElementById('dropFrameCheckbox').checked;
+            updateFpsDisplay();
+            updateTimerDisplay();
+            renderEntries();
+            autoSave();
         }
         
         // Helper to convert frames to timecode with specific fps (for fps switching)
@@ -4108,6 +4417,7 @@
             // Initialize display (uses whatever FPS is set from load or default)
             updateTimerDisplay();
             updateFpsDisplay();
+            updateDropFrameVisibility();
             
             // Render
             renderEntries();
@@ -4121,6 +4431,35 @@
             document.addEventListener('keydown', handleKeydown);
             
             document.getElementById('fpsSelect').addEventListener('change', onFpsSelectChange);
+            
+            // Drop frame checkbox
+            document.getElementById('dropFrameCheckbox').addEventListener('change', onDropFrameChange);
+            
+            // Frame rate detection modals
+            document.getElementById('fpsDetectYesBtn').addEventListener('click', performFrameRateDetection);
+            document.getElementById('fpsDetectNoBtn').addEventListener('click', () => {
+                hideFpsDetectModal();
+                finalizeVideoLoad();
+            });
+            document.getElementById('fpsSuggestYesBtn').addEventListener('click', applyDetectedFps);
+            document.getElementById('fpsSuggestNoBtn').addEventListener('click', () => {
+                hideFpsSuggestModal();
+                finalizeVideoLoad();
+            });
+            
+            // Close detection modals on overlay click
+            document.getElementById('fpsDetectModal').addEventListener('click', (e) => {
+                if (e.target.id === 'fpsDetectModal') {
+                    hideFpsDetectModal();
+                    finalizeVideoLoad();
+                }
+            });
+            document.getElementById('fpsSuggestModal').addEventListener('click', (e) => {
+                if (e.target.id === 'fpsSuggestModal') {
+                    hideFpsSuggestModal();
+                    finalizeVideoLoad();
+                }
+            });
             
             document.getElementById('jumpBtn').addEventListener('click', jumpToTime);
             document.getElementById('syncBtn').addEventListener('click', syncTimecode);
@@ -4333,7 +4672,7 @@
                     // Manual scrub or external change (but not frame stepping)
                     syncTimerToVideo();
                 }
-            });
+                  });
             
             video.addEventListener('ended', () => {
                 stopTimer();
