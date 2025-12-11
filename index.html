@@ -28,6 +28,59 @@
             --timer-glow: rgba(74, 124, 204, 0.3);
         }
 
+        /* Mobile blocking overlay */
+        .mobile-block-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-dark);
+            z-index: 10000;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .mobile-block-icon {
+            font-size: 4rem;
+            margin-bottom: 24px;
+            opacity: 0.7;
+        }
+
+        .mobile-block-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .mobile-block-message {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            max-width: 300px;
+            line-height: 1.6;
+        }
+
+        .mobile-block-logo {
+            margin-top: 40px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        @media (max-width: 900px), (hover: none) and (pointer: coarse) {
+            .mobile-block-overlay {
+                display: flex;
+            }
+            
+            body > *:not(.mobile-block-overlay) {
+                display: none !important;
+            }
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -164,7 +217,7 @@
         .video-panel {
             position: fixed;
             top: 200px;
-            left: 20px;
+            left: calc(50% - 500px);
             width: 480px;
             min-width: 320px;
             max-width: 900px;
@@ -705,9 +758,8 @@
         /* Floating Timer */
         .floating-timer {
             position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 200px;
+            left: calc(50% + 20px);
             background: var(--bg-panel);
             border: 1px solid var(--border-color);
             border-radius: 12px;
@@ -1172,6 +1224,16 @@
     </style>
 </head>
 <body>
+    <!-- Mobile Block Overlay -->
+    <div class="mobile-block-overlay">
+        <div class="mobile-block-icon">🎬</div>
+        <div class="mobile-block-title">Desktop Only</div>
+        <div class="mobile-block-message">
+            We're sorry — ScoreSpotter is currently desktop only. Please visit on a computer with a keyboard for the full experience.
+        </div>
+        <div class="mobile-block-logo">Silverphonic SoundLab<br>info@silverphonic.com</div>
+    </div>
+
     <!-- Header Metadata - Matching Spreadsheet Layout -->
     <div class="header-metadata">
         <div class="header-top-row">
