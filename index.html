@@ -1421,8 +1421,8 @@
             <div class="entries-container" id="entriesContainer">
                 <div class="empty-state">
                     <div class="empty-state-icon">🎬</div>
-                    <div>Press <strong>→</strong> to start the timer</div>
-                    <div>Press <strong>1-6</strong> or <strong>Esc</strong> to add cue markers</div>
+                    <div>Press <strong>→</strong> or <strong>Space</strong> to start the timer</div>
+                    <div>Press <strong>1-5</strong> or <strong>Esc</strong> to add cue markers</div>
                 </div>
             </div>
         </div>
@@ -1432,7 +1432,7 @@
             <div class="panel-section">
                 <div class="panel-section-title">Timer / Video Controls</div>
                 <div class="shortcut-row">
-                    <span class="shortcut-key">→</span>
+                    <span class="shortcut-key">→ / Space</span>
                     <span class="shortcut-label">Play / Pause</span>
                 </div>
                 <div class="shortcut-row">
@@ -1469,23 +1469,23 @@
                 </div>
                 <div class="shortcut-row">
                     <span class="shortcut-key">2</span>
-                    <span class="shortcut-label">(blank timestamp)</span>
-                </div>
-                <div class="shortcut-row">
-                    <span class="shortcut-key">3</span>
                     <span class="shortcut-label">Shift</span>
                 </div>
                 <div class="shortcut-row">
-                    <span class="shortcut-key">4</span>
+                    <span class="shortcut-key">3</span>
                     <span class="shortcut-label">Highlight</span>
                 </div>
                 <div class="shortcut-row">
-                    <span class="shortcut-key">5</span>
+                    <span class="shortcut-key">4</span>
                     <span class="shortcut-label">Sting</span>
                 </div>
                 <div class="shortcut-row">
-                    <span class="shortcut-key">6</span>
+                    <span class="shortcut-key">5</span>
                     <span class="shortcut-label">Xfade</span>
+                </div>
+                <div class="shortcut-row">
+                    <span class="shortcut-key">`</span>
+                    <span class="shortcut-label">(blank timestamp)</span>
                 </div>
                 <div class="shortcut-row">
                     <span class="shortcut-key">Esc</span>
@@ -1619,7 +1619,7 @@
                     <li>Load a video file (optional) - supports MP4, WebM, MOV</li>
                     <li>Set your frame rate to match your picture</li>
                     <li>Navigate to a frame with visible timecode and use <strong>Sync Timecode</strong> to match</li>
-                    <li>Press <strong>→</strong> (Right Arrow) to start the timer</li>
+                    <li>Press <strong>→</strong> (Right Arrow) or <strong>Space</strong> to start the timer</li>
                 </ol>
                 <p style="margin: 8px 0; font-size: 0.8rem; color: var(--text-dim); font-style: italic;">
                     Video files are loaded directly in your browser and never uploaded to any server. Your media stays completely local and private.
@@ -2050,7 +2050,7 @@
         function findNearestStandardFps(detectedFps) {
             let nearest = STANDARD_FRAME_RATES[0];
             let minDiff = Math.abs(detectedFps - nearest);
-            
+
             for (const fps of STANDARD_FRAME_RATES) {
                 const diff = Math.abs(detectedFps - fps);
                 if (diff < minDiff) {
@@ -2061,50 +2061,106 @@
             return nearest;
         }
 
+        function getFrameRateFromMetadata(video) {
+            // Try to get frame rate from video metadata using getVideoPlaybackQuality
+            // or from the MediaSource API if available
+            try {
+                // Method 1: Check if browser exposes frame rate via webkitVideoDecodedByteCount
+                // This is a heuristic based on video properties
+                if (video.videoWidth && video.videoHeight && video.duration) {
+                    // Some browsers expose this through media capabilities
+                    const track = video.videoTracks?.[0];
+                    if (track?.frameRate) {
+                        console.log(`Frame rate from video track: ${track.frameRate}`);
+                        return findNearestStandardFps(track.frameRate);
+                    }
+                }
+
+                // Method 2: Try using Media Capabilities API (if available)
+                // Note: This requires knowing the codec, so it's limited
+
+                // Method 3: Use requestVideoFrameCallback metadata (available during playback)
+                // We'll use this in the sampling method instead
+
+            } catch (e) {
+                console.log('Could not get frame rate from metadata:', e);
+            }
+            return null;
+        }
+
         function detectFrameRateBySampling(video) {
             return new Promise((resolve) => {
+                // First, try to get frame rate from metadata
+                const metadataFps = getFrameRateFromMetadata(video);
+                if (metadataFps) {
+                    console.log(`Using frame rate from metadata: ${metadataFps}`);
+                    resolve(metadataFps);
+                    return;
+                }
+
                 // Check if requestVideoFrameCallback is supported
                 if (!('requestVideoFrameCallback' in HTMLVideoElement.prototype)) {
                     console.log('requestVideoFrameCallback not supported');
                     resolve(null);
                     return;
                 }
-                
+
                 let frameCount = 0;
                 let startTime = null;
-                const sampleDuration = 3000; // 3 seconds for faster detection
+                let frameTimes = []; // Track individual frame times for better accuracy
+                const sampleDuration = 6000; // 6 seconds for better accuracy with 23.976 vs 24
                 const originalTime = video.currentTime;
-                const wasPlaying = !video.paused;
-                
+                const wasMuted = video.muted;
+
                 showDetectionProgress(true);
-                
+
                 function countFrame(now, metadata) {
                     if (startTime === null) {
                         startTime = now;
                     }
-                    
+
                     frameCount++;
-                    
+
+                    // Track frame presentation time from metadata for higher accuracy
+                    if (metadata.mediaTime !== undefined) {
+                        frameTimes.push(metadata.mediaTime);
+                    }
+
                     const elapsed = now - startTime;
                     if (elapsed >= sampleDuration) {
                         video.pause();
                         video.currentTime = originalTime;
+                        video.muted = wasMuted; // Restore muted state
                         showDetectionProgress(false);
-                        
-                        // Calculate FPS from frame count and elapsed time
-                        const avgFps = frameCount / (elapsed / 1000);
-                        console.log(`Detected ${frameCount} frames in ${elapsed}ms = ${avgFps.toFixed(3)} fps`);
-                        resolve(findNearestStandardFps(avgFps));
+
+                        let detectedFps;
+
+                        // Use media time if available (more accurate than wall clock)
+                        if (frameTimes.length >= 2) {
+                            const mediaDuration = frameTimes[frameTimes.length - 1] - frameTimes[0];
+                            if (mediaDuration > 0) {
+                                detectedFps = (frameTimes.length - 1) / mediaDuration;
+                                console.log(`Detected from media time: ${frameTimes.length - 1} frames in ${mediaDuration.toFixed(3)}s = ${detectedFps.toFixed(4)} fps`);
+                            }
+                        }
+
+                        // Fallback to wall clock calculation
+                        if (!detectedFps) {
+                            detectedFps = frameCount / (elapsed / 1000);
+                            console.log(`Detected from wall clock: ${frameCount} frames in ${elapsed}ms = ${detectedFps.toFixed(4)} fps`);
+                        }
+
+                        resolve(findNearestStandardFps(detectedFps));
                         return;
                     }
-                    
+
                     video.requestVideoFrameCallback(countFrame);
                 }
-                
+
                 // Start from beginning for consistent measurement
                 video.currentTime = 0;
                 video.muted = true; // Mute during detection
-                
+
                 // Wait for seek to complete, then start counting
                 video.onseeked = () => {
                     video.onseeked = null;
@@ -2450,11 +2506,11 @@
         function getActionName(actionKey) {
             const actions = {
                 '1': 'Cue Start',
-                '2': '',  // Blank timestamp - no text
-                '3': 'Shift',
-                '4': 'Highlight',
-                '5': 'Sting',
-                '6': 'Xfade',
+                '2': 'Shift',
+                '3': 'Highlight',
+                '4': 'Sting',
+                '5': 'Xfade',
+                '6': '',  // Blank timestamp - no text
                 '0': 'Cue End'
             };
             return actions[actionKey] !== undefined ? actions[actionKey] : '';
@@ -2463,11 +2519,11 @@
         function getActionClass(actionKey) {
             const classes = {
                 '1': 'cue-start',
-                '2': 'blank',
-                '3': 'shift',
-                '4': 'highlight',
-                '5': 'sting',
-                '6': 'xfade',
+                '2': 'shift',
+                '3': 'highlight',
+                '4': 'sting',
+                '5': 'xfade',
+                '6': 'blank',
                 '0': 'cue-end'
             };
             return classes[actionKey] || '';
@@ -2476,7 +2532,7 @@
         function findLastCueStart(beforeIndex) {
             // Find the most recent Cue Start OR Xfade (both start cues)
             for (let i = beforeIndex - 1; i >= 0; i--) {
-                if (state.entries[i].action === '1' || state.entries[i].action === '6') {
+                if (state.entries[i].action === '1' || state.entries[i].action === '5') {
                     return i;
                 }
             }
@@ -2486,7 +2542,7 @@
         function calculateDuration(entryIndex) {
             const entry = state.entries[entryIndex];
             // Cue Start and Xfade both show 00:00:00:00 (they're the start of a cue)
-            if (entry.action === '1' || entry.action === '6') {
+            if (entry.action === '1' || entry.action === '5') {
                 return framesToTimecode(0).display;
             }
             
@@ -2502,7 +2558,7 @@
         function getCueNumber(entryIndex) {
             const entry = state.entries[entryIndex];
             // Both Cue Start and Xfade get cue numbers (they both start cues)
-            if (entry.action !== '1' && entry.action !== '6') return '';
+            if (entry.action !== '1' && entry.action !== '5') return '';
             return `${entry.reel}m${entry.cueNum}`;
         }
 
@@ -2522,7 +2578,7 @@
             let group = 0;
             for (let i = 0; i <= entryIndex; i++) {
                 // Both Cue Start and Xfade start new cue groups
-                if (state.entries[i].action === '1' || state.entries[i].action === '6') {
+                if (state.entries[i].action === '1' || state.entries[i].action === '5') {
                     group++;
                 }
             }
@@ -2555,8 +2611,8 @@
                 state.actionHistory.push({ type: 'entry', index: state.entries.length - 1 });
             }
             
-            // === XFADE (6) - requires active cue, auto-inserts Cue End before ===
-            else if (actionKey === '6') {
+            // === XFADE (5) - requires active cue, auto-inserts Cue End before ===
+            else if (actionKey === '5') {
                 if (!cueIsActive) {
                     playErrorSound();
                     showToast('No active cue to crossfade from - press 1 for Cue Start first', 'error');
@@ -2578,7 +2634,7 @@
                 state.currentCueInReel++;
                 const entry = {
                     frames: currentFrames,
-                    action: '6',
+                    action: '5',
                     tags: [],
                     notes: '',
                     reel: state.currentReel,
@@ -2617,8 +2673,8 @@
                 state.actionHistory.push({ type: 'entry', index: state.entries.length - 1 });
             }
             
-            // === SHIFT (3), HIGHLIGHT (4), or STING (5) - if no cue, auto-inserts Cue Start before ===
-            else if (actionKey === '3' || actionKey === '4' || actionKey === '5') {
+            // === SHIFT (2), HIGHLIGHT (3), or STING (4) - if no cue, auto-inserts Cue Start before ===
+            else if (actionKey === '2' || actionKey === '3' || actionKey === '4') {
                 if (!cueIsActive) {
                     // Insert Cue Start one frame before
                     state.currentCueInReel++;
@@ -2647,8 +2703,8 @@
                 state.actionHistory.push({ type: 'entry', index: state.entries.length - 1 });
             }
             
-            // === BLANK TIMESTAMP (2) - just a timestamp, no action text ===
-            else if (actionKey === '2') {
+            // === BLANK TIMESTAMP (6) - just a timestamp, no action text ===
+            else if (actionKey === '6') {
                 if (!cueIsActive) {
                     // Auto-insert Cue Start one frame before
                     state.currentCueInReel++;
@@ -2666,7 +2722,7 @@
                 }
                 const entry = {
                     frames: currentFrames,
-                    action: '2', // Will display as blank
+                    action: '6', // Will display as blank
                     tags: [],
                     notes: '',
                     reel: state.currentReel,
@@ -2704,7 +2760,7 @@
             for (const entry of sortedEntries) {
                 if (entry.frames > targetFrames) break;
                 
-                if (entry.action === '1' || entry.action === '6') {
+                if (entry.action === '1' || entry.action === '5') {
                     cueActive = true;
                 } else if (entry.action === '0') {
                     cueActive = false;
@@ -2716,13 +2772,13 @@
         function addTagToEntry(key, entryIndex = null) {
             const index = entryIndex !== null ? entryIndex : state.selectedEntryIndex;
             if (index === null) return;
-            
+
             const theme = state.themes[key.toLowerCase()];
             if (!theme) {
                 showToast(`No theme defined for key "${key.toUpperCase()}"`, 'info');
                 return;
             }
-            
+
             const entry = state.entries[index];
             if (!entry.tags.includes(theme)) {
                 entry.tags.push(theme);
@@ -2734,13 +2790,13 @@
 
         function removeLastAction() {
             if (state.actionHistory.length === 0) return;
-            
+
             const lastAction = state.actionHistory.pop();
-            
+
             if (lastAction.type === 'entry') {
                 const removed = state.entries.pop();
                 // If we removed a Cue Start or Xfade, decrement the cue counter
-                if (removed.action === '1' || removed.action === '6') {
+                if (removed.action === '1' || removed.action === '5') {
                     state.currentCueInReel--;
                 }
                 // Recalculate the cue state from scratch
@@ -2776,8 +2832,8 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <div class="empty-state-icon">🎬</div>
-                        <div>Press <strong>→</strong> to start the timer</div>
-                        <div>Press <strong>1-6</strong> or <strong>Esc</strong> to add cue markers</div>
+                        <div>Press <strong>→</strong> or <strong>Space</strong> to start the timer</div>
+                        <div>Press <strong>1-5</strong> or <strong>Esc</strong> to add cue markers</div>
                     </div>
                 `;
                 return;
@@ -2887,9 +2943,9 @@
             const action = entry.action;
             
             // Check if deleting this entry would break cue structure
-            const isCueStart = action === '1' || action === '6';
+            const isCueStart = action === '1' || action === '5';
             const isCueEnd = action === '0';
-            const isMidCue = action === '2' || action === '3' || action === '4' || action === '5';
+            const isMidCue = action === '2' || action === '3' || action === '4' || action === '6';
             
             if (isMidCue) {
                 // Mid-cue entries can be deleted freely
@@ -2935,7 +2991,7 @@
                     endIndex = i;
                     break;
                 }
-                if (action === '1' || action === '6') {
+                if (action === '1' || action === '5') {
                     // Hit another cue start before finding end
                     endIndex = i - 1;
                     break;
@@ -2946,13 +3002,13 @@
             }
             return { startIndex, endIndex };
         }
-        
+
         function findCueRangeForEnd(endIndex) {
             // Find the range from Cue End back to its Cue Start
             let startIndex = null;
             for (let i = endIndex - 1; i >= 0; i--) {
                 const action = state.entries[i].action;
-                if (action === '1' || action === '6') {
+                if (action === '1' || action === '5') {
                     startIndex = i;
                     break;
                 }
@@ -3404,7 +3460,7 @@
             renderEntries();
             makeTimecodeEditable(insertIndex);
             
-            showToast('Enter timecode, then press an action key (1-5 or 0)', 'info');
+            showToast('Enter timecode, then press an action key (1-5, ` or Esc)', 'info');
         }
 
         function setReelNumber(index, renumberSubsequent) {
@@ -3443,7 +3499,7 @@
                 const entry = state.entries[i];
                 const action = entry.action;
                 
-                if (action === '1' || action === '6') {
+                if (action === '1' || action === '5') {
                     // Cue Start or Xfade - starts a new cue, gets a cue number
                     cueNum++;
                     entry.cueNum = cueNum;
@@ -3453,7 +3509,7 @@
                     entry.cueNum = null;
                     state.lastCueStartIndex = null;
                 } else {
-                    // Blank (2), Shift (3), Highlight (4), Sting (5) don't affect cue state
+                    // Shift (2), Highlight (3), Sting (4), Blank (6) don't affect cue state
                     entry.cueNum = null;
                 }
             }
@@ -3846,25 +3902,25 @@
                 const reelColorClass = getReelColor(entry.reel);
                 const isReelBlue = reelColorClass === 'blue';
                 const isFinalDuration = entry.action === '0';  // Only Cue End is final, not Xfade
-                const isKeyAction = entry.action === '1' || entry.action === '0' || entry.action === '6';
-                
+                const isKeyAction = entry.action === '1' || entry.action === '0' || entry.action === '5';
+
                 // Determine row background color
                 let rowBg = isOddGroup ? colors.cueGroupA : colors.cueGroupB;
-                
+
                 // Determine action-specific color (muted)
                 let actionBg = rowBg;
                 if (entry.action === '1') actionBg = colors.cueStart;
                 else if (entry.action === '0') actionBg = colors.cueEnd;
-                else if (entry.action === '3') actionBg = colors.shift;
-                else if (entry.action === '4') actionBg = colors.highlight;
-                else if (entry.action === '5') actionBg = colors.sting;
-                else if (entry.action === '6') actionBg = colors.xfade;
-                
+                else if (entry.action === '2') actionBg = colors.shift;
+                else if (entry.action === '3') actionBg = colors.highlight;
+                else if (entry.action === '4') actionBg = colors.sting;
+                else if (entry.action === '5') actionBg = colors.xfade;
+
                 // Determine timecode text color for key actions
                 let tcTextColor = colors.normalText;
                 if (entry.action === '1') tcTextColor = colors.cueStartText;
                 else if (entry.action === '0') tcTextColor = colors.cueEndText;
-                else if (entry.action === '6') tcTextColor = colors.xfadeText;
+                else if (entry.action === '5') tcTextColor = colors.xfadeText;
                 
                 // Reel indicator color
                 const reelBg = isReelBlue ? colors.reelBlue : colors.reelGreen;
@@ -4292,13 +4348,13 @@
                     return;
                 }
                 // Only allow timer/theme inputs if not the action keys
-                if (!['ArrowRight', 'ArrowLeft'].includes(e.key)) {
+                if (!['ArrowRight', 'ArrowLeft', ' '].includes(e.key)) {
                     return;
                 }
             }
             
             // Timer controls
-            if (e.key === 'ArrowRight') {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
                 e.preventDefault();
                 toggleTimer();
                 return;
@@ -4341,47 +4397,49 @@
                 return;
             }
             
-            // Action keys: 1=Cue Start, 2=Blank, 3=Shift, 4=Highlight, 5=Sting, 6=Xfade
-            if (['1', '2', '3', '4', '5', '6'].includes(e.key)) {
+            // Action keys: 1=Cue Start, 2=Shift, 3=Highlight, 4=Sting, 5=Xfade, `=Blank
+            const actionKeys = { '1': '1', '2': '2', '3': '3', '4': '4', '5': '5', '`': '6' };
+            if (actionKeys.hasOwnProperty(e.key)) {
                 e.preventDefault();
-                
+                const actionCode = actionKeys[e.key];
+
                 if (state.selectedEntryIndex !== null && !state.timer.isPlaying) {
                     // Change action of selected entry (only when stopped)
                     const entry = state.entries[state.selectedEntryIndex];
                     const wasStart = entry.action === '1';
-                    const wasXfade = entry.action === '6';
+                    const wasXfade = entry.action === '5';
                     const hadCueNum = wasStart || wasXfade;
-                    
-                    entry.action = e.key;
-                    
+
+                    entry.action = actionCode;
+
                     // If changing to Cue Start or Xfade and didn't have a cue number
-                    if ((e.key === '1' || e.key === '6') && !hadCueNum) {
+                    if ((actionCode === '1' || actionCode === '5') && !hadCueNum) {
                         state.currentCueInReel++;
                         entry.cueNum = state.currentCueInReel;
-                    } 
+                    }
                     // If changing away from Cue Start/Xfade to something else
-                    else if (hadCueNum && e.key !== '1' && e.key !== '6') {
+                    else if (hadCueNum && actionCode !== '1' && actionCode !== '5') {
                         entry.cueNum = null;
                     }
-                    
+
                     recalculateCueState();
                     renderEntries();
                     autoSave();
                 } else {
                     // Add new entry at current timer position (works playing OR stopped)
-                    addEntry(e.key);
+                    addEntry(actionCode);
                 }
                 return;
             }
-            
+
             // Escape = Cue End (stored as '0')
             if (e.key === 'Escape') {
                 e.preventDefault();
-                
+
                 if (state.selectedEntryIndex !== null && !state.timer.isPlaying) {
                     // Change selected entry to Cue End (only when stopped)
                     const entry = state.entries[state.selectedEntryIndex];
-                    const hadCueNum = entry.action === '1' || entry.action === '6';
+                    const hadCueNum = entry.action === '1' || entry.action === '5';
                     
                     entry.action = '0';
                     if (hadCueNum) {
